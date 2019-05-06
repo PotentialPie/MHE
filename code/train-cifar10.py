@@ -17,13 +17,29 @@ import time
 # python 3
 def unpickle(file):
     with open(file, 'rb') as fo:
-        u = pickle._Unpickler(fo)
-        u.encoding = 'latin1'
-        dict = u.load()
+        dict = pickle.load(fo, encoding='bytes')
     return dict
 
-train_data = unpickle('../train')
-test_data = unpickle('../test')
+label_list = []
+filename_list = []
+batch_label_list = []
+data_list = []
+train_data = {}
+
+for i in range(1, 6):
+    tmp = unpickle('data_batch_%d'%i)
+    print(type(tmp[b'labels']))
+    label_list.extend(tmp[b'labels'])
+    filename_list.extend(tmp[b'filenames'])
+    batch_label_list.extend(tmp[b'batch_label'])
+    data_list.extend(tmp[b'data'])
+
+train_data['labels'] = label_list
+train_data['filenames'] = filename_list
+train_data['batch_label'] = batch_label_list
+train_data['data'] = data_list
+
+test_data = unpickle('test_batch')
 
 
 def create_dir(dir_path):
