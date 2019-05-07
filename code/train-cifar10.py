@@ -75,7 +75,7 @@ def read_all_train_data():
     data_list = []
     train_data = {}
     for i in range(1, 6):
-        tmp = unpickle('data_batch_%d' % i)
+        tmp = unpickle('../data_batch_%d' % i)
         print(type(tmp[b'labels']))
         label_list.extend(tmp[b'labels'])
         filename_list.extend(tmp[b'filenames'])
@@ -97,8 +97,9 @@ def read_all_train_data():
     print(type(train_data['labels']))
     return train_data
 
-test_data = unpickle('test_batch')
-
+test_data = unpickle('../test_batch')
+test_data['data'] = test_data[b'data']
+test_data['labels'] = test_data[b'labels']
 train_data = read_all_train_data()
 train_data = get_single_imbalance(train_data, 0, 500)
 print(len(train_data['labels']))
@@ -136,14 +137,14 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
     os.environ["CUDA_VISIBLE_DEVICES"]=gpu_no
 
     cnn2depth = {'CNN6': 2, 'CNN9': 3, 'CNN15': 5}
-    cnn2width = {'0': [16,32,64], '1': [32,64,128], '2': [64,128,254736s6], '3': [128,256,512], '4': [256,512,1024]}
+    cnn2width = {'0': [16,32,64], '1': [32,64,128], '2': [64,128,256], '3': [128,256,512], '4': [256,512,1024]}
 
     used_in_H = str2bool(used_in_H)
     used_in_O = str2bool(used_in_O)
     visual = str2bool(visual)
 
     root_path = os.path.dirname(os.path.realpath(__file__))
-    exp_name = '%s_%s_power%s_width%s'%(architecture, model_name, power_s, width)
+    exp_name = 'cifar10_%s_%s_power%s_width%s'%(architecture, model_name, power_s, width)
     if used_in_H:
         exp_name = exp_name + '_H'
     if used_in_O:
@@ -238,7 +239,7 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
         start = time.time()
 
         for i in range(max_epoch):
-            t = i % 390
+            t = i % 355
             if t == 0:
                 idx = np.arange(0, total_data)
                 np.random.shuffle(idx)
@@ -312,7 +313,7 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
         all_test_features = []
         all_test_labels = []
         for j in range(int(n_test/batch_test)):
-            te_images, te_labels = ip.load_test(test_data, batch_test, j)
+            te_images, te_labels = ip.load_test_cifar10(test_data, batch_test, j)
             acc = acc + sess.run(acc_op, {is_training: False, images: te_images, labels: te_labels})
             if visual:
                 embedding_features = sess.run(cnn.fc6, {is_training: False, images: te_images, labels: te_labels})
