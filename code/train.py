@@ -49,7 +49,7 @@ acc_list = []
 time_list = []
 n = 5
 
-def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, used_in_H, used_in_O):
+def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, used_in_H, used_in_O, visual):
 
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"]=gpu_no
@@ -59,6 +59,7 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
 
     used_in_H = str2bool(used_in_H)
     used_in_O = str2bool(used_in_O)
+    visual = str2bool(visual)
 
     root_path = os.path.dirname(os.path.realpath(__file__))
     exp_name = '%s_%s_power%s_width%s'%(architecture, model_name, power_s, width)
@@ -96,7 +97,7 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
     width = cnn2width[width]
 
     cnn = CNNSimple()
-    cnn.build(images, n_class, is_training, model_name, power_s, n_layer, width, used_in_H, used_in_O)
+    cnn.build(images, n_class, is_training, model_name, power_s, n_layer, width, used_in_H, used_in_O, visual)
 
     fit_loss = loss2(cnn.score, labels, n_class, 'c_entropy')
     loss_op = fit_loss
@@ -273,13 +274,15 @@ if __name__ == "__main__":
                         help='True if use the MHE in hidden layer')
     parser.add_argument('--used_in_O', type=str, default='True',
                         help='True if use the MHE in output layer')
+    parser.add_argument('--visual', type=str, default='False',
+                        help='True if to visualization the embedding features')
 
     args = parser.parse_args()
 
     for i in range(n):
         tf.reset_default_graph()
         train(args.base_lr, args.batch_size, args.gpu_no, args.model_name, args.power_s, args.architecture, args.width,\
-              args.used_in_H, args.used_in_O)
+              args.used_in_H, args.used_in_O, args.visual)
 
 
 

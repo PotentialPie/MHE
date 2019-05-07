@@ -399,7 +399,7 @@ class CNNSimple():
                 return conv
 
     def build(self, rgb, n_class, is_training, model_name, power_s, n_layer=3, width=[64,128,256],\
-              used_in_H=True, used_in_O=True):
+              used_in_H=True, used_in_O=True, visual=False):
         self.wd = 5e-4
 
         feat = (rgb - 127.5) / 128.0
@@ -430,6 +430,9 @@ class CNNSimple():
                                     pad='SAME', reg=True, model=model_name, power=power_s,\
                                     used_in_H=used_in_H, used_in_O=used_in_O)
         feat = self._max_pool(feat, 'pool3')
+
+        if visual:
+            n_out = 2
 
         self.fc6 = self._conv_layer(feat, 4, n_out, is_training, "fc6", bn=False, relu=False, pad='VALID',
                                     reg=True, model=model_name, power=power_s,\

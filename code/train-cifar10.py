@@ -7,6 +7,8 @@ import cifar100_input_python as ip
 from loss import loss2
 from architecture import VGG, CNNSimple
 import time
+import random
+from collections import Counter
 
 # # python 2
 # def unpickle(file):
@@ -20,26 +22,89 @@ def unpickle(file):
         dict = pickle.load(fo, encoding='bytes')
     return dict
 
-label_list = []
-filename_list = []
-batch_label_list = []
-data_list = []
-train_data = {}
+def get_single_imbalance(train_data, single_class, single_num):
+    z_index = [i for i, x in enumerate(train_data['labels']) if x == single_class]
+    other_index = [i for i, x in enumerate(train_data['labels']) if x != single_class]
+    print(len(z_index))
+    print(len(other_index))
+    # print(z_index)
+    random.shuffle(z_index)
+    # print(z_index)
+    other_index.extend(z_index[:single_num])
+    print(len(other_index))
 
-for i in range(1, 6):
-    tmp = unpickle('data_batch_%d'%i)
-    print(type(tmp[b'labels']))
-    label_list.extend(tmp[b'labels'])
-    filename_list.extend(tmp[b'filenames'])
-    batch_label_list.extend(tmp[b'batch_label'])
-    data_list.extend(tmp[b'data'])
+    random.shuffle(other_index)
+    other_index = np.array(other_index)
+    print(other_index.shape)
+    print(train_data['labels'].shape)
+    print(train_data['data'].shape)
+    # print(other_index)
+    train_data['labels'] = train_data['labels'][other_index]
+    # train_data['filenames'] = train_data['filenames'][other_index]
+    # train_data['batch_label'] = train_data['batch_label'][other_index]
+    train_data['data'] = train_data['data'][other_index]
+    print(len(train_data['labels']))
+    print(len(train_data['data']))
+    return train_data
 
-train_data['labels'] = label_list
-train_data['filenames'] = filename_list
-train_data['batch_label'] = batch_label_list
-train_data['data'] = data_list
+def get_multiple_imbalance(train_data, num_step=500):
+    all_left_index = []
+    for class_index in range(10):
+        z_index = [i for i, x in enumerate(train_data['labels']) if x == class_index]
+        print(len(z_index))
+        random.shuffle(z_index)
+        print(z_index)
+        all_left_index.extend(z_index[:num_step*(class_index+1)])
+        print(len(all_left_index))
+    print(all_left_index)
+    random.shuffle(all_left_index)
+    print(all_left_index)
+    all_left_index = np.array(all_left_index)
+    train_data['labels'] = train_data['labels'][all_left_index]
+    # train_data['filenames'] = train_data['filenames'][all_left_index]
+    # train_data['batch_label'] = train_data['batch_label'][all_left_index]
+    train_data['data'] = train_data['data'][all_left_index]
+    print(len(train_data['labels']))
+    print(len(train_data['data']))
+    return train_data
+
+def read_all_train_data():
+    label_list = []
+    filename_list = []
+    batch_label_list = []
+    data_list = []
+    train_data = {}
+    for i in range(1, 6):
+        tmp = unpickle('data_batch_%d' % i)
+        print(type(tmp[b'labels']))
+        label_list.extend(tmp[b'labels'])
+        filename_list.extend(tmp[b'filenames'])
+        batch_label_list.extend(tmp[b'batch_label'])
+        data_list.extend(tmp[b'data'])
+
+    train_data['labels'] = np.array(label_list)
+    train_data['filenames'] = np.array(filename_list)
+    train_data['batch_label'] = np.array(batch_label_list)
+    train_data['data'] = np.array(data_list)
+
+    for key in train_data:
+        print(key)
+
+    # print(train_data['labels'])
+    # print(train_data['batch_label'])
+    counter = Counter(train_data['labels'])
+    print(counter)
+    print(type(train_data['labels']))
+    return train_data
 
 test_data = unpickle('test_batch')
+
+train_data = read_all_train_data()
+train_data = get_single_imbalance(train_data, 0, 500)
+print(len(train_data['labels']))
+
+print(train_data['labels'][0])
+print(train_data['data'][0])
 
 
 def create_dir(dir_path):
@@ -65,7 +130,7 @@ acc_list = []
 time_list = []
 n = 5
 
-def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, used_in_H, used_in_O):
+def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, used_in_H, used_in_O, visual):
 
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"]=gpu_no
@@ -75,6 +140,7 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
 
     used_in_H = str2bool(used_in_H)
     used_in_O = str2bool(used_in_O)
+    visual = str2bool(visual)
 
     root_path = os.path.dirname(os.path.realpath(__file__))
     exp_name = '%s_%s_power%s_width%s'%(architecture, model_name, power_s, width)
@@ -97,13 +163,14 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
     log_test_fname = 'log_test_%02d.txt' % acc_count
     log_test_all_fname = 'log_test_all.txt'
 
-    n_class = 100
+    n_class = 10
     batch_sz = batch_sz
     batch_test = 100
     max_epoch = 42500
     lr = base_lr
     momentum = 0.9
     is_training = tf.placeholder("bool")
+    total_data = train_data['labels'].shape[0]
 
     images = tf.placeholder(tf.float32, (None, 32, 32, 3))
     labels = tf.placeholder(tf.int32, (None))
@@ -112,7 +179,7 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
     width = cnn2width[width]
 
     cnn = CNNSimple()
-    cnn.build(images, n_class, is_training, model_name, power_s, n_layer, width, used_in_H, used_in_O)
+    cnn.build(images, n_class, is_training, model_name, power_s, n_layer, width, used_in_H, used_in_O, visual)
 
     fit_loss = loss2(cnn.score, labels, n_class, 'c_entropy')
     loss_op = fit_loss
@@ -173,12 +240,12 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
         for i in range(max_epoch):
             t = i % 390
             if t == 0:
-                idx = np.arange(0, 50000)
+                idx = np.arange(0, total_data)
                 np.random.shuffle(idx)
                 train_data['data'] = train_data['data'][idx]
-                train_data['fine_labels'] = np.reshape(train_data['fine_labels'], [50000])
-                train_data['fine_labels'] = train_data['fine_labels'][idx]
-            tr_images, tr_labels = ip.load_train(train_data, batch_sz, t)
+                train_data['labels'] = np.reshape(train_data['labels'], [total_data])
+                train_data['labels'] = train_data['labels'][idx]
+            tr_images, tr_labels = ip.load_train_cifar10(train_data, batch_sz, t)
 
             if i == 20000:
                 lr *= 0.1
@@ -228,7 +295,7 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
                 n_test = 10000
                 acc = 0.0
                 for j in range(int(n_test/batch_test)):
-                    te_images, te_labels = ip.load_test(test_data, batch_test, j)
+                    te_images, te_labels = ip.load_test_cifar10(test_data, batch_test, j)
                     acc = acc + sess.run(acc_op, {is_training: False, images: te_images, labels: te_labels})
                 acc = acc * batch_test / float(n_test)
                 print('++++iter_%d: test acc=%.4f' % (i, acc))
@@ -242,9 +309,20 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
 
         n_test = 10000
         acc = 0.0
+        all_test_features = []
+        all_test_labels = []
         for j in range(int(n_test/batch_test)):
             te_images, te_labels = ip.load_test(test_data, batch_test, j)
             acc = acc + sess.run(acc_op, {is_training: False, images: te_images, labels: te_labels})
+            if visual:
+                embedding_features = sess.run(cnn.fc6, {is_training: False, images: te_images, labels: te_labels})
+                all_test_features.extend(embedding_features)
+                all_test_labels.extend(te_labels)
+        if visual:
+            with open('embedding_features.pkl', 'wb') as f:
+                pickle.dump(all_test_features, f)
+            with open('labels.pkl', 'wb') as f:
+                pickle.dump(all_test_labels, f)
         acc = acc * batch_test / float(n_test)
         print('++++iter_%d: test acc=%.4f' % (i, acc))
         with open(os.path.join(log_path, log_test_fname), 'a') as test_acc_file:
@@ -289,13 +367,15 @@ if __name__ == "__main__":
                         help='True if use the MHE in hidden layer')
     parser.add_argument('--used_in_O', type=str, default='True',
                         help='True if use the MHE in output layer')
+    parser.add_argument('--visual', type=str, default='False',
+                        help='True if to visualization the embedding features')
 
     args = parser.parse_args()
 
     for i in range(n):
         tf.reset_default_graph()
         train(args.base_lr, args.batch_size, args.gpu_no, args.model_name, args.power_s, args.architecture, args.width,\
-              args.used_in_H, args.used_in_O)
+              args.used_in_H, args.used_in_O, args.visual)
 
 
 
