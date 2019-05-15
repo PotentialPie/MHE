@@ -102,6 +102,7 @@ test_data['data'] = test_data[b'data']
 test_data['labels'] = test_data[b'labels']
 train_data = read_all_train_data()
 train_data = get_single_imbalance(train_data, 0, 500)
+# train_data = get_multiple_imbalance(train_data, 500)
 print(len(train_data['labels']))
 
 print(train_data['labels'][0])
@@ -129,7 +130,8 @@ def str2bool(v):
 
 acc_list = []
 time_list = []
-n = 5
+single_acc_list = []
+n = 3
 
 def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, used_in_H, used_in_O, visual):
 
@@ -203,6 +205,8 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
     update_op = tf.train.MomentumOptimizer(lr_, 0.9).minimize(loss_op)
     predc = cnn.pred
     acc_op = tf.reduce_mean(tf.to_float(tf.equal(labels, tf.to_int32(cnn.pred))))
+    single_acc_op = tf.reduce_mean(tf.to_float(tf.equal(labels, tf.where(tf.equal(tf.to_int32(cnn.pred), 0), tf.to_int32(cnn.pred), -tf.ones_like(tf.to_int32(cnn.pred))))))
+
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -218,6 +222,7 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
             tf.summary.scalar('thomson final loss', thom_final)
         tf.summary.scalar('learning rate', lr)
         tf.summary.scalar('accuracy', acc_op)
+        tf.summary.scalar('single_accuracy', single_acc_op)
         merged = tf.summary.merge_all()
         train_writer = tf.summary.FileWriter(root_path + '/tf_log/%s' % exp_name, sess.graph)
 
@@ -239,7 +244,7 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
         start = time.time()
 
         for i in range(max_epoch):
-            t = i % 355
+            t = i % (total_data//batch_sz)
             if t == 0:
                 idx = np.arange(0, total_data)
                 np.random.shuffle(idx)
@@ -295,13 +300,16 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
             if i % 500 == 0 and i != 0:
                 n_test = 10000
                 acc = 0.0
+                single_acc = 0.0
                 for j in range(int(n_test/batch_test)):
                     te_images, te_labels = ip.load_test_cifar10(test_data, batch_test, j)
                     acc = acc + sess.run(acc_op, {is_training: False, images: te_images, labels: te_labels})
+                    single_acc = single_acc + sess.run(single_acc_op, {is_training: False, images: te_images, labels: te_labels})
                 acc = acc * batch_test / float(n_test)
-                print('++++iter_%d: test acc=%.4f' % (i, acc))
+                single_acc = single_acc * 10 * batch_test / float(n_test)
+                print('++++iter_%d: test acc=%.4f; class 0 acc=%.4f; ' % (i, acc, single_acc))
                 with open(os.path.join(log_path, log_test_fname), 'a') as test_acc_file:
-                    test_acc_file.write('++++iter_%d: test acc=%.4f\n' % (i, acc))
+                    test_acc_file.write('++++iter_%d: test acc=%.4f; class 0 acc=%.4f\n' % (i, acc, single_acc))
 
             if i%10000==0 and i!=0:
                 tf.train.Saver().save(sess, os.path.join(save_path, str(i)))
@@ -310,11 +318,14 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
 
         n_test = 10000
         acc = 0.0
+        single_acc = 0.0
         all_test_features = []
         all_test_labels = []
         for j in range(int(n_test/batch_test)):
             te_images, te_labels = ip.load_test_cifar10(test_data, batch_test, j)
             acc = acc + sess.run(acc_op, {is_training: False, images: te_images, labels: te_labels})
+            single_acc = single_acc + sess.run(single_acc_op,
+                                               {is_training: False, images: te_images, labels: te_labels})
             if visual:
                 embedding_features = sess.run(cnn.fc6, {is_training: False, images: te_images, labels: te_labels})
                 all_test_features.extend(embedding_features)
@@ -325,24 +336,28 @@ def train(base_lr, batch_sz, gpu_no, model_name, power_s, architecture, width, u
             with open('labels.pkl', 'wb') as f:
                 pickle.dump(all_test_labels, f)
         acc = acc * batch_test / float(n_test)
-        print('++++iter_%d: test acc=%.4f' % (i, acc))
+        single_acc = single_acc * 10 * batch_test / float(n_test)
+        print('++++iter_%d: test acc=%.4f; class 0 acc=%.4f; ' % (i, acc, single_acc))
         with open(os.path.join(log_path, log_test_fname), 'a') as test_acc_file:
-            test_acc_file.write('++++iter_%d: test acc=%.4f\n' % (i, acc))
+            test_acc_file.write('++++iter_%d: test acc=%.4f; class 0 acc=%.4f\n' % (i, acc, single_acc))
 
         end = time.time()
         total_cost = end - start
         print('====total time: %.4f\n' % total_cost)
 
         with open(os.path.join(log_path, log_test_all_fname), 'a') as test_acc_file:
-            test_acc_file.write('this time, test acc=%.4f, cost time=%.4f\n' % (acc, total_cost))
+            test_acc_file.write('this time, test acc=%.4f, class 0 acc=%.4f, cost time=%.4f\n' % (acc, single_acc, total_cost))
 
         acc_list.append(round(100.-acc*100., 4))
         time_list.append(total_cost)
+        single_acc_list.append(round(100.-single_acc*100., 4))
         if len(acc_list) == n:
             with open(os.path.join(log_path, log_test_all_fname), 'a') as test_acc_file:
-                test_acc_file.write('Totally, the average test error=%.2f, the average cost time=%.4f\n' %\
-                                    (Get_Average(acc_list), Get_Average(time_list)))
+                test_acc_file.write('Totally, the average test error=%.2f, the average single error=%.4f, the average cost time=%.4f\n' %\
+                                    (Get_Average(acc_list), Get_Average(single_acc_list), Get_Average(time_list)))
                 test_acc_file.write(','.join(list(map(str, acc_list))))
+                test_acc_file.write('\n')
+                test_acc_file.write(','.join(list(map(str, single_acc_list))))
 
 
 
